@@ -1,69 +1,182 @@
-# AR Animated AC Card
+# ❄️ AR Animated AC Card
 
-An animated wall-split air conditioner climate card for Home Assistant. A realistic indoor split unit throws air **down and out into the room**, the louver opens downward, swing sweeps the throw side-to-side, and a glowing under-unit halo plus accent colour follow the HVAC mode. Single dependency-free custom element with a visual config editor.
+A realistic animated split air-conditioner card for Home Assistant.
 
-![version](https://img.shields.io/badge/version-1.0.1-38bdf8)
-![hacs](https://img.shields.io/badge/HACS-Dashboard-41bdf5)
+The card visually represents an indoor wall-mounted AC unit with dynamic airflow, moving louvers, swing animations, HVAC mode colours, temperature controls, and live climate information.
 
-Repo: `marsh4200/ar_ac-lovelace` · card type: `custom:ar-animated-ac-card`
+Designed to look and feel like a real air-conditioner rather than a standard climate card.
 
-## What it does
+---
 
-- Realistic SVG split unit with gloss, intake grille, vents, on-board display and status LED
-- Airflow streams that pour downward and fan outward, only while actively heating/cooling (driven by `hvac_action`)
-- Louver that opens downward when running and closes flush when off
-- Swing sweeps the whole airflow left-to-right when swing is enabled
-- Accent follows HVAC mode (cool cyan / heat orange / dry green / fan violet / auto amber)
-- Airflow speed reacts to fan mode (low/quiet slows it, high speeds it up)
-- Target temperature stepper, room temperature and humidity readouts
-- Mode and fan buttons generated from the entity's own `hvac_modes` / `fan_modes`
-- Swing toggle shown only when the entity supports swing
+## Preview
 
-## Install
+<p align="center">
+  <img src="images/preview.gif" alt="AR Animated AC Card Preview" width="800">
+</p>
 
-### HACS (custom repository)
-1. HACS → ⋮ → Custom repositories → add `https://github.com/marsh4200/ar_ac-lovelace`, category **Dashboard**.
-2. Install. Add the resource if you are not prompted automatically.
+---
 
-### Manual / one-line
-From your HA config directory:
+## Features
 
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/marsh4200/ar_ac-lovelace/main/install.sh)
+✨ Realistic wall-mounted split-unit design
+
+🌬️ Animated airflow that blows downward and outward
+
+🎯 Automatic airflow animation based on `hvac_action`
+
+🔄 Swing mode animation
+
+🎨 HVAC mode colour themes
+
+* Cooling → Cyan
+* Heating → Orange
+* Dry → Green
+* Fan Only → Purple
+* Auto → Amber
+
+⚡ Fan speed affects airflow animation speed
+
+🌡️ Target temperature controls
+
+🏠 Current room temperature display
+
+💧 Humidity display (when available)
+
+📱 Fully responsive design
+
+🎛️ Auto-generated HVAC and fan mode controls
+
+🛠️ Built-in Visual Configuration Editor
+
+🚫 No external dependencies
+
+---
+
+## Installation
+
+### HACS
+
+[![Open your Home Assistant instance and open this repository in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=marsh4200&repository=ar_ac-lovelace&category=plugin)
+
+Or manually:
+
+1. Open HACS
+2. Select **Custom Repositories**
+3. Add:
+
+```text
+https://github.com/marsh4200/ar_ac-lovelace
 ```
 
-Then add the resource (Settings → Dashboards → Resources, type JavaScript Module):
+4. Category: **Dashboard**
+5. Install
+6. Reload your browser
 
+---
+
+### Manual Installation
+
+Copy:
+
+```text
+ar-animated-ac-card.js
 ```
+
+to:
+
+```text
+/config/www/community/ar_ac-lovelace/
+```
+
+Then add the resource:
+
+```text
+URL:
 /local/community/ar_ac-lovelace/ar-animated-ac-card.js
+
+Type:
+JavaScript Module
 ```
 
-## Usage
+---
+
+## Example Configuration
 
 ```yaml
 type: custom:ar-animated-ac-card
 entity: climate.living_room
-name: Living room        # optional, defaults to friendly_name
-show_current: true       # room temperature readout
-show_humidity: true      # humidity readout (auto-hidden if not reported)
+name: Living Room
+show_current: true
+show_humidity: true
 ```
 
-A visual editor is available in the dashboard card picker.
+---
 
-## Config
+## Configuration Options
 
-| Option         | Type    | Default              | Description                                  |
-|----------------|---------|----------------------|----------------------------------------------|
-| `entity`       | string  | —                    | A `climate.*` entity (required)              |
-| `name`         | string  | entity friendly name | Header title                                 |
-| `show_current` | boolean | `true`               | Show room temperature                        |
-| `show_humidity`| boolean | `true`               | Show humidity (auto-hidden if not reported)  |
+| Option        | Type    | Default       | Description           |
+| ------------- | ------- | ------------- | --------------------- |
+| entity        | string  | Required      | Climate entity        |
+| name          | string  | Friendly Name | Card title            |
+| show_current  | boolean | true          | Show room temperature |
+| show_humidity | boolean | true          | Show humidity value   |
 
-## Notes
+---
 
-- Airflow visibility is keyed off `hvac_action`. If your integration does not report it, the card assumes it is blowing whenever the mode is not `off`.
-- Temperature stepping uses `target_temp_step`, `min_temp` and `max_temp` from the entity. Range setpoints (`target_temp_low`/`high`) are displayed read-only.
+## Behaviour
 
-## License
+### Airflow Animation
 
-MIT © ARSmartHome
+The card automatically uses:
+
+```yaml
+hvac_action
+```
+
+to determine whether the AC is actively heating or cooling.
+
+If your integration does not expose `hvac_action`, airflow will be shown whenever the HVAC mode is not set to:
+
+```yaml
+off
+```
+
+---
+
+### Temperature Controls
+
+The card automatically honours:
+
+* `target_temp_step`
+* `min_temp`
+* `max_temp`
+
+Range setpoints (`target_temp_low` / `target_temp_high`) are displayed as read-only.
+
+---
+
+## Requirements
+
+* Home Assistant 2024.1+
+* A Climate Entity
+* Modern Browser
+
+---
+
+## Roadmap
+
+* [ ] Additional AC styles
+* [ ] Ceiling cassette support
+* [ ] Compact layout mode
+* [ ] Energy usage display
+* [ ] Advanced airflow patterns
+* [ ] Optional sound effects
+
+---
+
+
+---
+
+
+
+
