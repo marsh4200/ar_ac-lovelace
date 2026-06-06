@@ -1,5 +1,5 @@
 /*! ARSmartHome - Animated AC Climate Card  |  github.com/marsh4200/ar_ac-lovelace */
-const AR_AC_VERSION = "1.3.0";
+const AR_AC_VERSION = "1.4.0";
 
 const MODE_META = {
   cool:      { label: "Cool", icon: "mdi:snowflake",     color: "#38bdf8", glyph: "cool" },
@@ -144,7 +144,7 @@ class ArAnimatedAcCard extends HTMLElement {
       '<div class="card">' +
         '<div class="hdr"><div><div class="title" id="title">AC</div><div class="sub" id="sub"></div></div>' +
         '<button class="iconbtn power" id="power" title="Power"><ha-icon icon="mdi:power"></ha-icon></button></div>' +
-        '<svg class="unit" viewBox="0 0 360 200" role="img" aria-label="Air conditioner">' +
+        '<svg class="unit" id="unit" viewBox="0 0 360 200" role="img" aria-label="Air conditioner">' +
           '<defs>' +
             '<linearGradient id="arbody" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fbfdff"/><stop offset="0.55" stop-color="#eef2f7"/><stop offset="1" stop-color="#cfd6df"/></linearGradient>' +
             '<linearGradient id="argloss" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity="0.85"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></linearGradient>' +
@@ -169,7 +169,7 @@ class ArAnimatedAcCard extends HTMLElement {
           '<rect x="60" y="80" width="240" height="5" rx="2.5" fill="#10202e"/>' +
           '<path id="louver" d="' + LOUVER_SHUT + '" fill="#aeb6c2"/>' +
         '</svg>' +
-        '<div class="ctl">' +
+        '<div class="ctl" id="controls">' +
           '<div class="metric" id="curwrap"><span class="k">Room</span><span class="v"><ha-icon icon="mdi:thermometer"></ha-icon><span id="cur">--</span></span></div>' +
           '<div class="stepper"><button class="iconbtn round" id="down" title="Lower"><ha-icon icon="mdi:minus"></ha-icon></button>' +
           '<div class="tgt"><div class="big" id="big">--</div><div class="tlbl">target</div></div>' +
@@ -178,7 +178,7 @@ class ArAnimatedAcCard extends HTMLElement {
         '</div>' +
         '<div class="modes" id="modes" style="grid-template-columns:repeat(' + Math.max(hvacModes.length, 1) + ',1fr);">' + modeBtns + '</div>' +
         (fanModes.length || hasSwing ?
-          '<div class="fanrow"><div class="fans" id="fans">' + fanBtns + '</div>' +
+          '<div class="fanrow" id="fanrow"><div class="fans" id="fans">' + fanBtns + '</div>' +
           (hasSwing ? '<button class="iconbtn swing" id="swing" title="Swing"><ha-icon icon="mdi:arrow-up-down"></ha-icon></button>' : '') +
           '</div>' : '') +
       '</div>';
@@ -189,6 +189,8 @@ class ArAnimatedAcCard extends HTMLElement {
       curwrap: root.getElementById("curwrap"), humwrap: root.getElementById("humwrap"), big: root.getElementById("big"),
       louver: root.getElementById("louver"), swing: root.getElementById("swing"), streamswrap: root.getElementById("streamswrap"),
       streams: root.getElementById("streams"),
+      unit: root.getElementById("unit"), controls: root.getElementById("controls"),
+      modesEl: root.getElementById("modes"), fanrow: root.getElementById("fanrow"),
     };
 
     for (let i = 0; i < 9; i++) {
@@ -297,6 +299,10 @@ class ArAnimatedAcCard extends HTMLElement {
     E.louver.setAttribute("d", isOn ? LOUVER_OPEN : LOUVER_SHUT);
     E.streamswrap.classList.toggle("swinging", isOn && swingOn);
 
+    const collapse = Array.isArray(this._config.collapse_when_off) ? this._config.collapse_when_off : [];
+    const sect = { unit: E.unit, controls: E.controls, modes: E.modesEl, fan: E.fanrow };
+    Object.keys(sect).forEach((k) => { if (sect[k]) sect[k].style.display = (!isOn && collapse.includes(k)) ? "none" : ""; });
+
     this.shadowRoot.querySelectorAll(".mode").forEach((b) => b.classList.toggle("active", b.dataset.mode === mode && isOn));
     this.shadowRoot.querySelectorAll(".fan").forEach((b) => b.classList.toggle("active", b.dataset.fan === a.fan_mode && isOn));
     if (E.swing) E.swing.style.color = isOn && swingOn ? meta.color : "var(--muted)";
@@ -313,6 +319,7 @@ class ArAnimatedAcCardEditor extends HTMLElement {
       this._form.computeLabel = (s) => ({
         entity: "Climate entity", name: "Name (optional)", theme: "Background",
         modes: "HVAC modes to show", fan_modes: "Fan speeds to show",
+        collapse_when_off: "Collapse when off",
         show_current: "Show room temperature", show_humidity: "Show humidity",
       }[s.name] || s.name);
       this._form.addEventListener("value-changed", (ev) => {
@@ -336,6 +343,12 @@ class ArAnimatedAcCardEditor extends HTMLElement {
       { name: "theme", selector: { select: { mode: "dropdown", options: [{ value: "dark", label: "Dark" }, { value: "light", label: "Light" }] } } },
       ...(modeOpts.length ? [{ name: "modes", selector: { select: { multiple: true, mode: "list", options: modeOpts } } }] : []),
       ...(fanOpts.length ? [{ name: "fan_modes", selector: { select: { multiple: true, mode: "list", options: fanOpts } } }] : []),
+      { name: "collapse_when_off", selector: { select: { multiple: true, mode: "list", options: [
+        { value: "unit", label: "Unit graphic" },
+        { value: "controls", label: "Temperature & metrics" },
+        { value: "modes", label: "Mode buttons" },
+        { value: "fan", label: "Fan speeds" },
+      ] } } },
       { name: "show_current", selector: { boolean: {} } },
       { name: "show_humidity", selector: { boolean: {} } },
     ];
