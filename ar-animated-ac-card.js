@@ -1,5 +1,5 @@
 /*! ARSmartHome - Animated AC Climate Card  |  github.com/marsh4200/ar_ac-lovelace */
-const AR_AC_VERSION = "1.2.0";
+const AR_AC_VERSION = "1.3.0";
 
 const MODE_META = {
   cool:      { label: "Cool", icon: "mdi:snowflake",     color: "#38bdf8", glyph: "cool" },
@@ -122,8 +122,15 @@ class ArAnimatedAcCard extends HTMLElement {
     const root = this.attachShadow({ mode: "open" });
     const st = this._hass.states[this._config.entity];
     const a = st ? st.attributes : {};
-    const hvacModes = (a.hvac_modes || ["cool", "heat", "dry", "fan_only", "auto"]).filter((m) => m !== "off");
-    const fanModes = a.fan_modes || [];
+    let hvacModes = (a.hvac_modes || ["cool", "heat", "dry", "fan_only", "auto"]).filter((m) => m !== "off");
+    if (Array.isArray(this._config.modes) && this._config.modes.length) {
+      hvacModes = this._config.modes.filter((m) => hvacModes.includes(m));
+    }
+    const entityFans = a.fan_modes || [];
+    let fanModes = entityFans;
+    if (Array.isArray(this._config.fan_modes) && this._config.fan_modes.length) {
+      fanModes = this._config.fan_modes.filter((f) => entityFans.includes(f));
+    }
     const hasSwing = Array.isArray(a.swing_modes) && a.swing_modes.length > 1;
 
     const modeBtns = hvacModes.map((m) => {
@@ -305,6 +312,7 @@ class ArAnimatedAcCardEditor extends HTMLElement {
       this._form = document.createElement("ha-form");
       this._form.computeLabel = (s) => ({
         entity: "Climate entity", name: "Name (optional)", theme: "Background",
+        modes: "HVAC modes to show", fan_modes: "Fan speeds to show",
         show_current: "Show room temperature", show_humidity: "Show humidity",
       }[s.name] || s.name);
       this._form.addEventListener("value-changed", (ev) => {
@@ -314,10 +322,20 @@ class ArAnimatedAcCardEditor extends HTMLElement {
     }
     this._form.hass = this._hass;
     this._form.data = this._config;
+
+    const est = this._hass.states[this._config.entity];
+    const ea = est ? est.attributes : {};
+    const pretty = (s) => s.toString().replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    const modeOpts = (ea.hvac_modes || []).filter((m) => m !== "off")
+      .map((m) => ({ value: m, label: (MODE_META[m] && MODE_META[m].label) || pretty(m) }));
+    const fanOpts = (ea.fan_modes || []).map((f) => ({ value: f, label: pretty(f) }));
+
     this._form.schema = [
       { name: "entity", required: true, selector: { entity: { domain: "climate" } } },
       { name: "name", selector: { text: {} } },
       { name: "theme", selector: { select: { mode: "dropdown", options: [{ value: "dark", label: "Dark" }, { value: "light", label: "Light" }] } } },
+      ...(modeOpts.length ? [{ name: "modes", selector: { select: { multiple: true, mode: "list", options: modeOpts } } }] : []),
+      ...(fanOpts.length ? [{ name: "fan_modes", selector: { select: { multiple: true, mode: "list", options: fanOpts } } }] : []),
       { name: "show_current", selector: { boolean: {} } },
       { name: "show_humidity", selector: { boolean: {} } },
     ];
