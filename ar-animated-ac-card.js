@@ -1,5 +1,5 @@
 /*! ARSmartHome - Animated AC Climate Card  |  github.com/marsh4200/ar_ac-lovelace */
-const AR_AC_VERSION = "1.4.0";
+const AR_AC_VERSION = "1.5.0";
 
 const MODE_META = {
   cool:      { label: "Cool", icon: "mdi:snowflake",     color: "#38bdf8", glyph: "cool" },
@@ -81,6 +81,8 @@ const STYLE =
 '.swing{width:40px;height:36px;border-radius:11px;--mdc-icon-size:18px;}' +
 '.iconbtn:active,.mode:active,.fan:active{background:var(--fill2);}' +
 '.mode.active,.fan.active{border-color:var(--accent);color:var(--accent);background:var(--fill2);box-shadow:inset 0 0 0 1px var(--accent),0 0 10px -3px var(--accent);font-weight:600;}' +
+'.card.off .big,.card.off .tlbl{opacity:.45;}' +
+'.card.off #disp{opacity:.4;}' +
 '.warn{padding:16px;color:#fb923c;font-size:13px;}' +
 '@keyframes blow{0%{transform:translateY(-6px);opacity:0}20%{opacity:.9}100%{transform:translateY(64px);opacity:0}}' +
 '@keyframes glowpulse{0%,100%{opacity:.2}50%{opacity:.4}}' +
@@ -163,7 +165,7 @@ class ArAnimatedAcCard extends HTMLElement {
             '<g id="modeglyph" transform="translate(248,54)">' + GLYPHS + '</g>' +
             '<text id="disp" x="298" y="59" text-anchor="middle" font-family="monospace" font-size="17" style="fill:var(--accent)">--</text>' +
             '<circle id="led" cx="40" cy="23" r="4" style="fill:var(--accent)"/>' +
-            '<text x="206" y="25" text-anchor="end" font-family="sans-serif" font-size="8" fill="#9aa4b1">ARSmartHome</text>' +
+            '<text id="brand" x="206" y="25" text-anchor="end" font-family="sans-serif" font-size="8" fill="#9aa4b1"></text>' +
           '</g>' +
           '<path d="M34 76 L326 76 L318 90 L42 90 Z" fill="url(#arlip)" stroke="#aab2bd" stroke-width="0.5"/>' +
           '<rect x="60" y="80" width="240" height="5" rx="2.5" fill="#10202e"/>' +
@@ -188,7 +190,7 @@ class ArAnimatedAcCard extends HTMLElement {
       disp: root.getElementById("disp"), cur: root.getElementById("cur"), hum: root.getElementById("hum"),
       curwrap: root.getElementById("curwrap"), humwrap: root.getElementById("humwrap"), big: root.getElementById("big"),
       louver: root.getElementById("louver"), swing: root.getElementById("swing"), streamswrap: root.getElementById("streamswrap"),
-      streams: root.getElementById("streams"),
+      streams: root.getElementById("streams"), brand: root.getElementById("brand"),
       unit: root.getElementById("unit"), controls: root.getElementById("controls"),
       modesEl: root.getElementById("modes"), fanrow: root.getElementById("fanrow"),
     };
@@ -226,25 +228,70 @@ class ArAnimatedAcCard extends HTMLElement {
     this._svc("set_swing_mode", { swing_mode: on });
   }
 
+  /* Coerce anything the integration throws at us into a usable number.
+     IR/Broadlink climate entities often report setpoints as strings ("24",
+     "24.0", "24 \u00b0C") rather than floats, which used to fail typeof checks. */
+  _num(v) {
+    if (v == null) return null;
+    if (typeof v === "number") return isFinite(v) ? v : null;
+    const n = parseFloat(String(v).replace(",", ".").replace(/[^\d.\-]/g, ""));
+    return isFinite(n) ? n : null;
+  }
+
+  /* Resolve the target setpoint across the attribute names different
+     integrations use. Returns {value, low, high, range}. */
+  _target() {
+    const a = (this._hass.states[this._config.entity] || {}).attributes || {};
+    const key = this._config.temperature_attribute;
+    const cands = key ? [a[key]] : [a.temperature, a.target_temp, a.target_temperature, a.setpoint, a.temp];
+    for (const c of cands) {
+      const n = this._num(c);
+      if (n != null) return { value: n, range: false };
+    }
+    const lo = this._num(a.target_temp_low), hi = this._num(a.target_temp_high);
+    if (lo != null && hi != null) return { value: null, low: lo, high: hi, range: true };
+    if (!this._warned) {
+      this._warned = true;
+      console.warn("[ar-animated-ac-card] no target temperature attribute found on " +
+        this._config.entity + ". Attributes present: " + Object.keys(a).join(", ") +
+        ". Set `temperature_attribute:` in the card config to point at the right one.");
+    }
+    return { value: null, range: false };
+  }
+
+  _step() {
+    const a = this._hass.states[this._config.entity].attributes;
+    return this._num(this._config.step) || this._num(a.target_temp_step) || 1;
+  }
+
   _stepTemp(dir) {
     const st = this._hass.states[this._config.entity];
-    if (!st || st.state === "off") return;
+    if (!st || st.state === "unavailable") return;
     const a = st.attributes;
-    if (typeof a.temperature !== "number") return;
-    const step = a.target_temp_step || 0.5;
-    const min = a.min_temp != null ? a.min_temp : 7;
-    const max = a.max_temp != null ? a.max_temp : 35;
-    let next = Math.min(max, Math.max(min, Math.round((a.temperature + dir * step) / step) * step));
+    const t = this._target();
+    if (t.range) return;
+    const step = this._step();
+    const min = this._num(a.min_temp) != null ? this._num(a.min_temp) : 7;
+    const max = this._num(a.max_temp) != null ? this._num(a.max_temp) : 35;
+    // No setpoint reported yet (common on IR units after a restart): start from
+    // the room temperature, or the middle of the allowed range.
+    let base = t.value;
+    if (base == null) base = this._num(a.current_temperature);
+    if (base == null) base = Math.round((min + max) / 2);
+    let next = Math.min(max, Math.max(min, Math.round((base + dir * step) / step) * step));
     this._svc("set_temperature", { temperature: Number(next.toFixed(2)) });
   }
 
   _unit() {
     const st = this._hass.states[this._config.entity];
     return (st && st.attributes.temperature_unit) ||
-      (this._hass.config && this._hass.config.unit_system && this._hass.config.unit_system.temperature) || "°";
+      (this._hass.config && this._hass.config.unit_system && this._hass.config.unit_system.temperature) || "\u00b0";
   }
 
-  _fmt(t) { return (t == null || isNaN(t)) ? "--" : (Math.round(t * 10) / 10).toString(); }
+  _fmt(t) {
+    const n = this._num(t);
+    return n == null ? "--" : (Math.round(n * 10) / 10).toString();
+  }
 
   _update() {
     const st = this._hass.states[this._config.entity];
@@ -253,7 +300,8 @@ class ArAnimatedAcCard extends HTMLElement {
     const a = st.attributes;
     const mode = st.state;
     const meta = MODE_META[mode] || { color: "#38bdf8", glyph: null };
-    const isOn = mode !== "off";
+    const dead = mode === "unavailable" || mode === "unknown";
+    const isOn = !dead && mode !== "off";
     const action = a.hvac_action;
     const blowing = isOn && (action ? ACTIVE_ACTIONS.includes(action) : true);
 
@@ -266,20 +314,35 @@ class ArAnimatedAcCard extends HTMLElement {
 
     E.title.textContent = this._config.name || a.friendly_name || "AC";
 
-    const unit = this._unit();
-    let target = a.temperature;
-    if (target == null && a.target_temp_high != null) target = a.target_temp_low + "–" + a.target_temp_high;
-    const targetStr = target != null ? (typeof target === "number" ? this._fmt(target) : target) : "--";
+    // Hidden branding on the indoor unit. Defaults to ARSmartHome; set
+    // `brand:` in the card config to override, or "" to remove it entirely.
+    const brand = (this._config.brand == null ? "ARSmartHome" : String(this._config.brand)).slice(0, 24);
+    if (E.brand) {
+      E.brand.textContent = brand;
+      E.brand.setAttribute("font-size", brand.length > 18 ? 6 : brand.length > 14 ? 6.8 : brand.length > 11 ? 7.4 : 8);
+    }
 
-    if (isOn) {
+    const unit = this._unit();
+    const t = this._target();
+    const targetStr = t.range ? (this._fmt(t.low) + "–" + this._fmt(t.high))
+                              : (t.value != null ? this._fmt(t.value) : "--");
+    const hasTarget = targetStr !== "--" && !dead;
+
+    if (dead) {
+      E.sub.textContent = this._pretty(mode);
+    } else if (isOn) {
       const verb = action && ACTION_VERB[action] ? ACTION_VERB[action] : (MODE_META[mode] ? MODE_META[mode].label : this._pretty(mode));
-      let html = verb + " · " + targetStr + unit;
+      let html = verb + (hasTarget ? " · " + targetStr + unit : "");
       if (a.fan_mode) html += ' <span class="fanchip"><ha-icon icon="mdi:fan"></ha-icon>' + this._pretty(a.fan_mode) + "</span>";
       E.sub.innerHTML = html;
-    } else E.sub.textContent = "Off";
+    } else {
+      E.sub.textContent = hasTarget ? "Off · " + targetStr + unit : "Off";
+    }
 
-    E.disp.textContent = isOn ? (typeof target === "number" ? this._fmt(target) + "°" : targetStr) : "--";
-    E.big.innerHTML = isOn ? targetStr + '<span class="u">' + unit + "</span>" : "--";
+    // Show the setpoint whenever the entity reports one, even while off or idle,
+    // rather than blanking it to "--". Dimmed via CSS when the unit is off.
+    E.disp.textContent = hasTarget ? targetStr + "°" : "--";
+    E.big.innerHTML = hasTarget ? targetStr + '<span class="u">' + unit + "</span>" : "--";
 
     this.shadowRoot.querySelectorAll("#modeglyph .gl").forEach((g) => (g.style.display = "none"));
     if (isOn && meta.glyph) {
@@ -287,12 +350,12 @@ class ArAnimatedAcCard extends HTMLElement {
       if (gl) gl.style.display = "";
     }
 
-    if (this._config.show_current !== false && a.current_temperature != null) {
+    if (this._config.show_current !== false && this._num(a.current_temperature) != null) {
       E.curwrap.style.visibility = "visible"; E.cur.textContent = this._fmt(a.current_temperature) + unit;
     } else E.curwrap.style.visibility = "hidden";
 
-    if (this._config.show_humidity !== false && a.current_humidity != null) {
-      E.humwrap.style.visibility = "visible"; E.hum.textContent = Math.round(a.current_humidity) + "%";
+    if (this._config.show_humidity !== false && this._num(a.current_humidity) != null) {
+      E.humwrap.style.visibility = "visible"; E.hum.textContent = Math.round(this._num(a.current_humidity)) + "%";
     } else E.humwrap.style.visibility = "hidden";
 
     const swingOn = a.swing_mode && a.swing_mode !== "off";
@@ -321,11 +384,29 @@ class ArAnimatedAcCardEditor extends HTMLElement {
         modes: "HVAC modes to show", fan_modes: "Fan speeds to show",
         collapse_when_off: "Collapse when off",
         show_current: "Show room temperature", show_humidity: "Show humidity",
+        brand: "Unit branding", step: "Temperature step", temperature_attribute: "Setpoint attribute",
       }[s.name] || s.name);
       this._form.addEventListener("value-changed", (ev) => {
         this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: ev.detail.value }, bubbles: true, composed: true }));
       });
       this.appendChild(this._form);
+    }
+
+    // Tap the version line five times to unlock the branding / IR fields.
+    if (!this._foot) {
+      this._foot = document.createElement("div");
+      this._foot.style.cssText = "margin-top:14px;font-size:11px;opacity:.45;cursor:default;user-select:none;text-align:right;";
+      this._foot.textContent = "AR Animated AC Card v" + AR_AC_VERSION;
+      this._taps = 0;
+      this._foot.addEventListener("click", () => {
+        if (this._secret) return;
+        if (++this._taps >= 5) {
+          this._secret = true;
+          this._foot.textContent = "Advanced unlocked \u00b7 v" + AR_AC_VERSION;
+          this._render();
+        }
+      });
+      this.appendChild(this._foot);
     }
     this._form.hass = this._hass;
     this._form.data = this._config;
@@ -351,6 +432,11 @@ class ArAnimatedAcCardEditor extends HTMLElement {
       ] } } },
       { name: "show_current", selector: { boolean: {} } },
       { name: "show_humidity", selector: { boolean: {} } },
+      ...(this._secret ? [
+        { name: "brand", selector: { text: {} } },
+        { name: "step", selector: { number: { min: 0.1, max: 5, step: 0.1, mode: "box" } } },
+        { name: "temperature_attribute", selector: { text: {} } },
+      ] : []),
     ];
   }
 }
