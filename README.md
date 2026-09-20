@@ -2,7 +2,7 @@
 
 An animated wall-split air conditioner climate card for Home Assistant. A realistic indoor split unit throws air **down and out into the room**, the louver opens downward, swing sweeps the throw side-to-side, the on-unit LCD shows the active mode symbol beside the temperature, and the accent colour follows the HVAC mode. Single dependency-free custom element with a visual config editor and dark/light backgrounds.
 
-![version](https://img.shields.io/badge/version-1.5.0-38bdf8)
+![version](https://img.shields.io/badge/version-1.6.0-38bdf8)
 ![hacs](https://img.shields.io/badge/HACS-Dashboard-41bdf5)
 
 Repo: `marsh4200/ar_ac-lovelace` · card type: `custom:ar-animated-ac-card`
@@ -17,8 +17,10 @@ Repo: `marsh4200/ar_ac-lovelace` · card type: `custom:ar-animated-ac-card`
 - Current fan speed stays lit on its button and is shown in the status line with a fan icon
 - Accent follows HVAC mode (cool cyan / heat orange / dry green / fan violet / auto amber)
 - Airflow speed reacts to fan mode (low/quiet slows it, high speeds it up)
+- Optional display-light button beside power; the on-unit LCD and LED go dark when the display is off
 - Dark or light background
 - Mode and fan buttons generated from the entity's own `hvac_modes` / `fan_modes`; swing button shown only when supported
+- Preset row (Eco, Boost, Sleep, WindFree, Quiet, Away, 8°C Heat…) generated from `preset_modes`, with matching icons; the active preset shows in the status line
 
 ## Install
 
@@ -40,6 +42,7 @@ name: Living room        # optional, defaults to friendly_name
 theme: dark              # dark | light
 show_current: true       # room temperature readout
 show_humidity: true      # humidity readout (auto-hidden if not reported)
+display_entity: switch.living_room_ac_display   # optional display light toggle
 ```
 
 A visual editor is available in the dashboard card picker.
@@ -53,6 +56,10 @@ A visual editor is available in the dashboard card picker.
 | `theme`        | string  | `dark`               | Background: `dark` or `light`                |
 | `show_current` | boolean | `true`               | Show room temperature                        |
 | `show_humidity`| boolean | `true`               | Show humidity (auto-hidden if not reported)  |
+| `show_presets` | boolean | `true`               | Show the preset row (auto-hidden if the entity has no `preset_modes`) |
+| `preset_modes` | list    | all except `none`    | Which presets to show, in this order         |
+| `display_entity` | string | —                  | Entity that controls the AC's display light (`switch`, `light`, `input_boolean`, `select`, `button`). Adds a toggle beside power |
+| `collapse_when_off` | list | `[]`             | Hide sections while off: `unit`, `controls`, `modes`, `fan`, `presets` |
 
 ### Hidden options
 
@@ -75,11 +82,20 @@ step: 1
 ## Notes
 
 - Airflow visibility is keyed off `hvac_action`. If your integration does not report it, the card assumes it is blowing whenever the mode is not `off`.
+- The display light is almost always a separate entity from the climate entity (e.g. `switch.<ac>_display`, `light.<ac>_display_light`, Gree/Midea/Tuya "panel light"). Switch/light/input_boolean are turned on/off, `select` entities flip between an on-ish and off-ish option, and `button` entities are pressed (no state shown).
+- Tap the active preset again to clear it (sets `none`, when the entity offers it). `none` is hidden from the row unless you list it in `preset_modes`.
 - Temperature stepping uses `target_temp_step`, `min_temp` and `max_temp` from the entity. Range setpoints (`target_temp_low`/`high`) are displayed read-only.
 - IR-based climate entities (Broadlink / SmartIR / `ar_smart_ir`) often report the setpoint as a string rather than a number, and often report no setpoint at all until one is sent. The card coerces string setpoints, falls back to `target_temp` / `target_temperature` / `setpoint`, and will step from the room temperature if the entity has no setpoint yet.
 - The setpoint stays visible when the unit is off (dimmed) instead of blanking to `--`. If it still shows `--`, open the browser console: the card logs the attribute names it can see so you can point `temperature_attribute` at the right one.
 
 ## Changelog
+
+### 1.6.0
+- Preset mode support: preset buttons from the entity's `preset_modes` with icons for eco/saver, boost/turbo, sleep, WindFree, quiet, away, home, comfort, 8°C heat and more
+- Active preset shown in the status line; tap it again to return to `none`
+- New `show_presets` / `preset_modes` options (also in the visual editor) and `presets` in `collapse_when_off`
+- Display light toggle via new `display_entity` option (also in the visual editor); LCD and LED on the drawn unit blank out when the display is off
+- Fixed a crash when the card config changed after first render (e.g. editing in the visual editor)
 
 ### 1.5.0
 - Fixed `--` setpoint on Broadlink / IR climate entities (string setpoints, alternate attribute names, missing setpoints)

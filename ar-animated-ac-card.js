@@ -1,5 +1,5 @@
 /*! ARSmartHome - Animated AC Climate Card  |  github.com/marsh4200/ar_ac-lovelace */
-const AR_AC_VERSION = "1.5.0";
+const AR_AC_VERSION = "1.6.0";
 
 const MODE_META = {
   cool:      { label: "Cool", icon: "mdi:snowflake",     color: "#38bdf8", glyph: "cool" },
@@ -16,6 +16,31 @@ const ACTION_VERB = {
   cooling: "Cooling", heating: "Heating", drying: "Drying", fan: "Fan only",
   idle: "Idle", off: "Off", preheating: "Pre-heating", defrosting: "Defrosting",
 };
+
+/* Preset icons. Matched by regex so vendor spellings ("WindFree", "wind_free",
+   "Energy Saver", "8°C Heat", "Powerful") land on a sensible icon. First hit wins. */
+const PRESET_META = [
+  [/^none$|^normal$|^off$/i,          "mdi:circle-off-outline",    "None"],
+  [/wind.?free|windless|no.?wind/i,   "mdi:weather-windy-variant", null],
+  [/eco|saver|energy|econ/i,          "mdi:leaf",                  null],
+  [/boost|turbo|powerful|power|jet|fast|rapid|max/i, "mdi:rocket-launch", null],
+  [/sleep|night|dream/i,              "mdi:weather-night",         null],
+  [/quiet|silent|mute|whisper/i,      "mdi:volume-off",            null],
+  [/away|vacation|holiday/i,          "mdi:account-arrow-right",   null],
+  [/home/i,                           "mdi:home",                  null],
+  [/comfort|cozy|smart.?comfort/i,    "mdi:sofa",                  null],
+  [/activity|active/i,                "mdi:motion-sensor",         null],
+  [/8.?°?c|freeze|frost|anti.?freeze/i, "mdi:snowflake-alert",     null],
+  [/long.?wind|long|far/i,            "mdi:arrow-expand-horizontal", null],
+  [/clean|purif|\bion|plasma|sterili/i, "mdi:air-purifier",          null],
+  [/\bai\b|smart|auto/i,                  "mdi:creation",              null],
+  [/single|personal|me\b/i,          "mdi:account",               null],
+];
+
+function presetMeta(p) {
+  for (const [re, icon, label] of PRESET_META) if (re.test(String(p))) return { icon, label };
+  return { icon: "mdi:tune-variant", label: null };
+}
 
 const LOUVER_OPEN = "M52 84 L308 84 L322 100 L38 100 Z";
 const LOUVER_SHUT = "M60 84 L300 84 L294 92 L66 92 Z";
@@ -49,6 +74,13 @@ const STYLE =
 '.iconbtn{border:0.5px solid var(--line);background:var(--fill);color:var(--accent);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;}' +
 '.power{width:40px;height:40px;border-radius:50%;--mdc-icon-size:20px;}' +
 '.card:not(.off) .power{box-shadow:0 0 14px -2px var(--accent);}' +
+'.hbtns{display:flex;align-items:center;gap:8px;}' +
+'.dispbtn{width:34px;height:34px;border-radius:50%;--mdc-icon-size:17px;color:var(--muted);}' +
+'.dispbtn.on{color:var(--accent);border-color:var(--accent);}' +
+'.dispbtn.na{opacity:.35;cursor:default;}' +
+'#modeglyph,#disp{transition:opacity .3s;}' +
+'.card.dispoff #modeglyph,.card.dispoff #disp{opacity:0!important;}' +
+'.card.dispoff #led{fill:#3a4452!important;}' +
 'svg.unit{width:100%;display:block;margin:2px 0;}' +
 '#streamswrap{transform-origin:180px 92px;}' +
 '#streams path{animation:blow var(--flowdur) ease-in infinite;}' +
@@ -78,9 +110,13 @@ const STYLE =
 '.fanrow{display:flex;align-items:center;gap:10px;margin-top:12px;}' +
 '.fans{display:flex;gap:6px;flex:1;}' +
 '.fan{flex:1;padding:8px 0;border-radius:11px;border:0.5px solid var(--line);background:var(--fill);color:var(--ink);cursor:pointer;font-size:11px;transition:all .2s;}' +
+'.presets{display:grid;gap:6px;margin-top:10px;}' +
+'.preset{display:flex;align-items:center;justify-content:center;gap:5px;padding:7px 4px;border-radius:11px;border:0.5px solid var(--line);background:var(--fill);color:var(--ink);cursor:pointer;font-size:11px;--mdc-icon-size:15px;transition:all .2s;min-width:0;}' +
+'.preset span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}' +
+'.presetchip{display:inline-flex;align-items:center;gap:4px;color:var(--accent);--mdc-icon-size:14px;}' +
 '.swing{width:40px;height:36px;border-radius:11px;--mdc-icon-size:18px;}' +
-'.iconbtn:active,.mode:active,.fan:active{background:var(--fill2);}' +
-'.mode.active,.fan.active{border-color:var(--accent);color:var(--accent);background:var(--fill2);box-shadow:inset 0 0 0 1px var(--accent),0 0 10px -3px var(--accent);font-weight:600;}' +
+'.iconbtn:active,.mode:active,.fan:active,.preset:active{background:var(--fill2);}' +
+'.mode.active,.fan.active,.preset.active{border-color:var(--accent);color:var(--accent);background:var(--fill2);box-shadow:inset 0 0 0 1px var(--accent),0 0 10px -3px var(--accent);font-weight:600;}' +
 '.card.off .big,.card.off .tlbl{opacity:.45;}' +
 '.card.off #disp{opacity:.4;}' +
 '.warn{padding:16px;color:#fb923c;font-size:13px;}' +
@@ -121,7 +157,7 @@ class ArAnimatedAcCard extends HTMLElement {
 
   _build() {
     this._built = true;
-    const root = this.attachShadow({ mode: "open" });
+    const root = this.shadowRoot || this.attachShadow({ mode: "open" });
     const st = this._hass.states[this._config.entity];
     const a = st ? st.attributes : {};
     let hvacModes = (a.hvac_modes || ["cool", "heat", "dry", "fan_only", "auto"]).filter((m) => m !== "off");
@@ -134,10 +170,23 @@ class ArAnimatedAcCard extends HTMLElement {
       fanModes = this._config.fan_modes.filter((f) => entityFans.includes(f));
     }
     const hasSwing = Array.isArray(a.swing_modes) && a.swing_modes.length > 1;
+    const entityPresets = Array.isArray(a.preset_modes) ? a.preset_modes : [];
+    // "none" doubles as the off state: tapping the active preset returns to it,
+    // so it only gets its own button when explicitly listed in the config.
+    let presetModes = entityPresets.filter((p) => !/^none$/i.test(p));
+    if (Array.isArray(this._config.preset_modes) && this._config.preset_modes.length) {
+      presetModes = this._config.preset_modes.filter((p) => entityPresets.includes(p));
+    }
+    if (this._config.show_presets === false) presetModes = [];
 
     const modeBtns = hvacModes.map((m) => {
       const meta = MODE_META[m] || { label: this._pretty(m), icon: "mdi:dots-horizontal" };
       return '<button class="mode" data-mode="' + m + '"><ha-icon icon="' + meta.icon + '"></ha-icon><span>' + meta.label + '</span></button>';
+    }).join("");
+    const presetBtns = presetModes.map((p) => {
+      const pm = presetMeta(p);
+      const lbl = pm.label || this._pretty(p);
+      return '<button class="preset" data-preset="' + p + '" title="' + lbl + '"><ha-icon icon="' + pm.icon + '"></ha-icon><span>' + lbl + '</span></button>';
     }).join("");
     const fanBtns = fanModes.map((f) => '<button class="fan" data-fan="' + f + '">' + this._pretty(f) + '</button>').join("");
 
@@ -145,7 +194,10 @@ class ArAnimatedAcCard extends HTMLElement {
       '<style>' + STYLE + '</style>' +
       '<div class="card">' +
         '<div class="hdr"><div><div class="title" id="title">AC</div><div class="sub" id="sub"></div></div>' +
-        '<button class="iconbtn power" id="power" title="Power"><ha-icon icon="mdi:power"></ha-icon></button></div>' +
+        '<div class="hbtns">' +
+          (this._config.display_entity ? '<button class="iconbtn dispbtn" id="dispbtn" title="Display light"><ha-icon icon="mdi:lightbulb-outline"></ha-icon></button>' : '') +
+          '<button class="iconbtn power" id="power" title="Power"><ha-icon icon="mdi:power"></ha-icon></button>' +
+        '</div></div>' +
         '<svg class="unit" id="unit" viewBox="0 0 360 200" role="img" aria-label="Air conditioner">' +
           '<defs>' +
             '<linearGradient id="arbody" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fbfdff"/><stop offset="0.55" stop-color="#eef2f7"/><stop offset="1" stop-color="#cfd6df"/></linearGradient>' +
@@ -183,6 +235,8 @@ class ArAnimatedAcCard extends HTMLElement {
           '<div class="fanrow" id="fanrow"><div class="fans" id="fans">' + fanBtns + '</div>' +
           (hasSwing ? '<button class="iconbtn swing" id="swing" title="Swing"><ha-icon icon="mdi:arrow-up-down"></ha-icon></button>' : '') +
           '</div>' : '') +
+        (presetModes.length ?
+          '<div class="presets" id="presets" style="grid-template-columns:repeat(' + Math.min(presetModes.length, 4) + ',minmax(0,1fr));">' + presetBtns + '</div>' : '') +
       '</div>';
 
     this._el = {
@@ -193,6 +247,7 @@ class ArAnimatedAcCard extends HTMLElement {
       streams: root.getElementById("streams"), brand: root.getElementById("brand"),
       unit: root.getElementById("unit"), controls: root.getElementById("controls"),
       modesEl: root.getElementById("modes"), fanrow: root.getElementById("fanrow"),
+      presetsEl: root.getElementById("presets"), dispbtn: root.getElementById("dispbtn"),
     };
 
     for (let i = 0; i < 9; i++) {
@@ -208,7 +263,9 @@ class ArAnimatedAcCard extends HTMLElement {
     root.getElementById("down").onclick = () => this._stepTemp(-1);
     root.querySelectorAll(".mode").forEach((b) => (b.onclick = () => this._svc("set_hvac_mode", { hvac_mode: b.dataset.mode })));
     root.querySelectorAll(".fan").forEach((b) => (b.onclick = () => this._svc("set_fan_mode", { fan_mode: b.dataset.fan })));
+    root.querySelectorAll(".preset").forEach((b) => (b.onclick = () => this._setPreset(b.dataset.preset)));
     if (this._el.swing) this._el.swing.onclick = () => this._toggleSwing();
+    if (this._el.dispbtn) this._el.dispbtn.onclick = () => this._toggleDisplay();
   }
 
   _togglePower() {
@@ -226,6 +283,46 @@ class ArAnimatedAcCard extends HTMLElement {
     if (cur && cur !== "off") return this._svc("set_swing_mode", { swing_mode: "off" });
     const on = modes.find((m) => /vertical|both|on/i.test(m)) || modes.find((m) => m !== "off") || "on";
     this._svc("set_swing_mode", { swing_mode: on });
+  }
+
+  /* Display light lives on its own entity (switch / light / input_boolean /
+     select / button, depending on the integration). */
+  _toggleDisplay() {
+    const id = this._config.display_entity;
+    const st = id && this._hass.states[id];
+    if (!st || st.state === "unavailable") return;
+    const domain = id.split(".")[0];
+    if (domain === "button" || domain === "input_button") {
+      return this._hass.callService(domain, "press", { entity_id: id });
+    }
+    if (domain === "select" || domain === "input_select") {
+      const opts = st.attributes.options || [];
+      const on = opts.find((o) => /^on$|show|bright/i.test(o)) || opts[0];
+      const off = opts.find((o) => /^off$|hide|dark/i.test(o)) || opts[1];
+      return this._hass.callService(domain, "select_option", { entity_id: id, option: this._displayOn() ? off : on });
+    }
+    this._hass.callService("homeassistant", this._displayOn() ? "turn_off" : "turn_on", { entity_id: id });
+  }
+
+  /* true / false, or null when there is no usable state (button entities). */
+  _displayOn() {
+    const id = this._config.display_entity;
+    const st = id && this._hass.states[id];
+    if (!st) return null;
+    const d = id.split(".")[0];
+    if (d === "button" || d === "input_button") return null;
+    if (st.state === "unavailable" || st.state === "unknown") return null;
+    return !/^(off|hide|dark|false|0)$/i.test(st.state);
+  }
+
+  _setPreset(p) {
+    const st = this._hass.states[this._config.entity];
+    if (!st) return;
+    const list = st.attributes.preset_modes || [];
+    const none = list.find((x) => /^none$/i.test(x));
+    // Tap the active preset again to clear it (when the entity offers "none").
+    if (st.attributes.preset_mode === p && none && p !== none) p = none;
+    this._svc("set_preset_mode", { preset_mode: p });
   }
 
   /* Coerce anything the integration throws at us into a usable number.
@@ -333,6 +430,10 @@ class ArAnimatedAcCard extends HTMLElement {
     } else if (isOn) {
       const verb = action && ACTION_VERB[action] ? ACTION_VERB[action] : (MODE_META[mode] ? MODE_META[mode].label : this._pretty(mode));
       let html = verb + (hasTarget ? " · " + targetStr + unit : "");
+      if (a.preset_mode && !/^none$/i.test(a.preset_mode)) {
+        const pm = presetMeta(a.preset_mode);
+        html += ' <span class="presetchip"><ha-icon icon="' + pm.icon + '"></ha-icon>' + (pm.label || this._pretty(a.preset_mode)) + "</span>";
+      }
       if (a.fan_mode) html += ' <span class="fanchip"><ha-icon icon="mdi:fan"></ha-icon>' + this._pretty(a.fan_mode) + "</span>";
       E.sub.innerHTML = html;
     } else {
@@ -363,11 +464,22 @@ class ArAnimatedAcCard extends HTMLElement {
     E.streamswrap.classList.toggle("swinging", isOn && swingOn);
 
     const collapse = Array.isArray(this._config.collapse_when_off) ? this._config.collapse_when_off : [];
-    const sect = { unit: E.unit, controls: E.controls, modes: E.modesEl, fan: E.fanrow };
+    const sect = { unit: E.unit, controls: E.controls, modes: E.modesEl, fan: E.fanrow, presets: E.presetsEl };
     Object.keys(sect).forEach((k) => { if (sect[k]) sect[k].style.display = (!isOn && collapse.includes(k)) ? "none" : ""; });
 
     this.shadowRoot.querySelectorAll(".mode").forEach((b) => b.classList.toggle("active", b.dataset.mode === mode && isOn));
     this.shadowRoot.querySelectorAll(".fan").forEach((b) => b.classList.toggle("active", b.dataset.fan === a.fan_mode && isOn));
+    const dOn = this._displayOn();
+    E.card.classList.toggle("dispoff", dOn === false);
+    if (E.dispbtn) {
+      const dst = this._hass.states[this._config.display_entity];
+      E.dispbtn.classList.toggle("on", dOn === true);
+      E.dispbtn.classList.toggle("na", !dst || dst.state === "unavailable");
+      const ic = E.dispbtn.querySelector("ha-icon");
+      if (ic) ic.setAttribute("icon", dOn === false ? "mdi:lightbulb-off-outline" : dOn === true ? "mdi:lightbulb-on-outline" : "mdi:lightbulb-outline");
+      E.dispbtn.title = "Display light" + (dOn === true ? " (on)" : dOn === false ? " (off)" : "");
+    }
+    this.shadowRoot.querySelectorAll(".preset").forEach((b) => b.classList.toggle("active", b.dataset.preset === a.preset_mode && isOn));
     if (E.swing) E.swing.style.color = isOn && swingOn ? meta.color : "var(--muted)";
   }
 }
@@ -382,6 +494,8 @@ class ArAnimatedAcCardEditor extends HTMLElement {
       this._form.computeLabel = (s) => ({
         entity: "Climate entity", name: "Name (optional)", theme: "Background",
         modes: "HVAC modes to show", fan_modes: "Fan speeds to show",
+        preset_modes: "Presets to show", show_presets: "Show presets",
+        display_entity: "Display light entity (optional)",
         collapse_when_off: "Collapse when off",
         show_current: "Show room temperature", show_humidity: "Show humidity",
         brand: "Unit branding", step: "Temperature step", temperature_attribute: "Setpoint attribute",
@@ -417,6 +531,7 @@ class ArAnimatedAcCardEditor extends HTMLElement {
     const modeOpts = (ea.hvac_modes || []).filter((m) => m !== "off")
       .map((m) => ({ value: m, label: (MODE_META[m] && MODE_META[m].label) || pretty(m) }));
     const fanOpts = (ea.fan_modes || []).map((f) => ({ value: f, label: pretty(f) }));
+    const presetOpts = (ea.preset_modes || []).map((p) => ({ value: p, label: presetMeta(p).label || pretty(p) }));
 
     this._form.schema = [
       { name: "entity", required: true, selector: { entity: { domain: "climate" } } },
@@ -429,7 +544,13 @@ class ArAnimatedAcCardEditor extends HTMLElement {
         { value: "controls", label: "Temperature & metrics" },
         { value: "modes", label: "Mode buttons" },
         { value: "fan", label: "Fan speeds" },
+        { value: "presets", label: "Presets" },
       ] } } },
+      ...(presetOpts.length ? [
+        { name: "show_presets", selector: { boolean: {} } },
+        ...(this._config.show_presets !== false ? [{ name: "preset_modes", selector: { select: { multiple: true, mode: "list", options: presetOpts } } }] : []),
+      ] : []),
+      { name: "display_entity", selector: { entity: { domain: ["switch", "light", "input_boolean", "select", "input_select", "button", "input_button"] } } },
       { name: "show_current", selector: { boolean: {} } },
       { name: "show_humidity", selector: { boolean: {} } },
       ...(this._secret ? [
@@ -448,7 +569,7 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "ar-animated-ac-card",
   name: "AR Animated AC Card",
-  description: "Animated wall-split air conditioner climate card with downward airflow, swing sweep, on-unit mode glyph and dark/light themes.",
+  description: "Animated wall-split air conditioner climate card with downward airflow, swing sweep, presets, on-unit mode glyph and dark/light themes.",
   preview: true,
   documentationURL: "https://github.com/marsh4200/ar_ac-lovelace",
 });
